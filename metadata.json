@@ -1,0 +1,7 @@
+{
+  "name": "Apex AI",
+  "description": "A real-time voice agent application that acts as a Sales/Discovery call training simulator. Users can personalize scenarios and receive detailed feedback from an AI coach.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

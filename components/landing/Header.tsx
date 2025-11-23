@@ -52,7 +52,7 @@ const Header: React.FC<HeaderProps> = ({ onStart }) => {
               Login
             </button>
             <button onClick={onStart} className="bg-primary hover:bg-primary-hover text-white font-semibold py-2 px-4 rounded-lg transition-colors">
-              Start Free Trial
+              Get Started
             </button>
           </div>
 
@@ -76,7 +76,7 @@ const Header: React.FC<HeaderProps> = ({ onStart }) => {
               Login
             </button>
             <button onClick={handleMobileActionClick} className="bg-primary hover:bg-primary-hover text-white font-semibold py-2 px-4 rounded-lg transition-colors w-full text-center">
-              Start Free Trial
+              Get Started
             </button>
           </nav>
         </div>

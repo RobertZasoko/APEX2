@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import { auth, updateUserProfile } from '../services/firebase';
-import { updateProfile } from 'firebase/auth';
+import { updateProfile, User } from 'firebase/auth';
 import { LoadingIcon } from './icons/Icons';
 
-const OnboardingScreen: React.FC = () => {
+interface OnboardingScreenProps {
+    onOnboardingComplete: (user: User) => void;
+}
+
+const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onOnboardingComplete }) => {
     const [username, setUsername] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -28,7 +32,10 @@ const OnboardingScreen: React.FC = () => {
             // Update both the Firestore document and the Auth profile
             await updateUserProfile(user.uid, { name: finalUsername });
             await updateProfile(user, { displayName: finalUsername });
-            // onAuthStateChanged in App.tsx will now pick up the changes and proceed.
+            
+            // Signal to App.tsx that onboarding is complete
+            onOnboardingComplete(user);
+
         } catch (err) {
             console.error("Failed to update profile:", err);
             setError("Could not save your name. Please try again.");

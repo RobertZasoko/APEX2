@@ -25,8 +25,8 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ user, onSubscri
       <div className="max-w-md w-full bg-panel p-8 rounded-lg shadow-sm border border-border">
         <div className="text-center">
           <RobotIcon className="mx-auto h-12 w-12 text-primary" />
-          <h1 className="text-3xl font-semibold text-text-primary mt-4 font-heading">Unlock Pro Access</h1>
-          <p className="text-text-secondary mt-2">Your trial has ended. Choose a plan to continue improving your skills.</p>
+          <h1 className="text-3xl font-semibold text-text-primary mt-4 font-heading">Free Credits Depleted</h1>
+          <p className="text-text-secondary mt-2">You've used all your free credits. Subscribe to the Pro Plan for unlimited AI call simulations and unlock your full potential.</p>
         </div>
 
         <div className="mt-8">

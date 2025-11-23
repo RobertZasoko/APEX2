@@ -62,6 +62,7 @@ const PayPalButtons: React.FC<PayPalButtonsProps> = ({ userId, planId, onSuccess
               subscriptionStatus: 'pro',
               subscriptionProvider: 'paypal',
               paypalSubscriptionId: data.subscriptionID,
+              freeCredits: 0, // Set free credits to 0 upon Pro subscription
             };
             
             // DANGER: Client-side entitlement. See warning above.

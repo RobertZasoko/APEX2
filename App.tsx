@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState, Scenario, TranscriptMessage, UserProfile, CallRecord, Feedback, SavedScenario } from './types';
 import { generateFeedback } from './services/geminiService';
-import { auth, onAuthStateChanged, signOut, getUserProfile, getSimulations, saveSimulation, updateUserProfile, deleteSimulation, deleteMultipleSimulations } from './services/firebase';
+import { auth, onAuthStateChanged, signOut, getUserProfile, getSimulations, saveSimulation, updateUserProfile, deleteSimulation, deleteMultipleSimulations, decrementUserCredits } from './services/firebase';
 import { User } from 'firebase/auth';
 
 // Landing Page Components
@@ -42,19 +42,23 @@ const App: React.FC = () => {
 
   const handleLoginSuccess = useCallback(async (firebaseUser: User) => {
     try {
-      // Ensure the user profile exists in Firestore and is fully populated.
-      // updateUserProfile now handles creation if the profile doesn't exist.
-      await updateUserProfile(firebaseUser.uid, {
-        name: firebaseUser.displayName || "",
-        email: firebaseUser.email || "",
-        // Other default fields will be set by updateUserProfile if not present
-      });
+      let userProfileData = await getUserProfile(firebaseUser.uid);
 
-      // Re-fetch the complete user profile after ensuring it's created/updated
-      const userProfileData = await getUserProfile(firebaseUser.uid);
+      // Implement polling for userProfileData to ensure it's available
+      if (!userProfileData) {
+        const pollForProfile = async (retries = 10, delay = 500): Promise<Omit<UserProfile, 'callHistory'> | null> => {
+            for (let i = 0; i < retries; i++) {
+                const profile = await getUserProfile(firebaseUser.uid);
+                if (profile) return profile;
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+            return null;
+        };
+        userProfileData = await pollForProfile();
+      }
 
       if (!userProfileData) {
-        console.error("User profile not found after login success.");
+        console.error("User profile not found after login/onboarding success, even after polling.");
         alert("There was a problem setting up your account. Please try logging in again.");
         await signOut(auth);
         return;
@@ -73,40 +77,38 @@ const App: React.FC = () => {
       console.error("Error during login success handling:", error);
       alert("An error occurred during login. Please try again.");
       await signOut(auth);
-    } finally {
-      setIsAuthLoading(false);
     }
   }, []);
 
+  const handleOnboardingComplete = useCallback(async (firebaseUser: User) => {
+    await handleLoginSuccess(firebaseUser);
+  }, [handleLoginSuccess]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setIsAuthLoading(true);
+      setIsAuthLoading(true); 
       try {
         if (firebaseUser) {
-          // If user has no display name, they need to go through onboarding.
-          // This happens for new email/password signups.
-          if (!firebaseUser.displayName) {
+          const userProfileData = await getUserProfile(firebaseUser.uid);
+
+          if (!userProfileData || !firebaseUser.displayName) {
             setAppState(AppState.ONBOARDING);
             setView('app');
-            setIsAuthLoading(false);
             return;
           }
           
-          // For existing users or Google sign-ups, ensure profile is complete
           await handleLoginSuccess(firebaseUser);
 
         } else {
-          // User is signed out.
           setUser(null);
           setAppState(AppState.LOGIN);
-          setIsAuthLoading(false);
         }
       } catch (error) {
         console.error("Failed to process auth state change:", error);
-        // Reset to a known safe state on error
         setUser(null);
         setAppState(AppState.LOGIN);
         setView('landing');
+      } finally {
         setIsAuthLoading(false);
       }
     });
@@ -140,14 +142,9 @@ const App: React.FC = () => {
 
     const isPro = user.subscriptionStatus === 'pro' || user.subscriptionStatus === 'founder';
     
-    // It's possible trialEndDate is a Firestore Timestamp. If so, convert it to a Date.
-    const trialEndDateAsDate = user.trialEndDate && (user.trialEndDate as any).toDate 
-      ? (user.trialEndDate as any).toDate() 
-      : user.trialEndDate;
+    const hasFreeCredits = (user.freeCredits && user.freeCredits > 0) ?? false;
 
-    const isTrialActive = trialEndDateAsDate && trialEndDateAsDate >= new Date();
-
-    if (!isPro && !isTrialActive) {
+    if (!isPro && !hasFreeCredits) {
         setAppState(AppState.SUBSCRIPTION);
         return;
     }
@@ -215,6 +212,12 @@ const App: React.FC = () => {
         callRecordingUrl: audioUrl,
       };
       const newRecordId = await saveSimulation(user.id, newRecordForDb);
+
+      // Decrement credits if user is on free plan and has credits
+      if (user.subscriptionStatus === 'free' && (user.freeCredits && user.freeCredits > 0)) {
+        await decrementUserCredits(user.id);
+        setUser(prevUser => prevUser ? { ...prevUser, freeCredits: (prevUser.freeCredits || 0) - 1 } : null);
+      }
 
       // Optimistically update local state to show the new record immediately
       const newRecordForState: CallRecord = {
@@ -324,13 +327,11 @@ const App: React.FC = () => {
       return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
     }
     if (appState === AppState.ONBOARDING) {
-      return <OnboardingScreen />;
+      return <OnboardingScreen onOnboardingComplete={handleOnboardingComplete} />;
     }
     
     // All states below require a user object.
     if (!user) {
-      // If we're in a state that needs a user but don't have one, show a loader
-      // to allow time for the auth state to resolve.
       return (
         <div className="flex h-screen w-screen items-center justify-center bg-background">
             <LoadingIcon className="w-12 h-12 text-primary" />

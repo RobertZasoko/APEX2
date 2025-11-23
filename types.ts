@@ -58,8 +58,8 @@ export interface UserProfile {
   email: string | null;
   callHistory: CallRecord[];
   savedScenarios: SavedScenario[];
-  subscriptionStatus?: 'pro' | 'trial' | 'founder' | 'cancelled' | 'suspended';
-  trialEndDate?: Date;
+  subscriptionStatus?: 'free' | 'pro' | 'founder' | 'cancelled' | 'suspended';
+  freeCredits?: number; // Added freeCredits
   createdAt?: Date;
   paypalSubscriptionId?: string;
   subscriptionProvider?: 'paypal' | null;

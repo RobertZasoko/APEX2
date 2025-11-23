@@ -22,7 +22,8 @@ import {
   Timestamp,
   updateDoc,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  increment // Import increment
 } from "firebase/firestore";
 import { UserProfile, CallRecord } from "../types";
 
@@ -55,7 +56,7 @@ export const getUserProfile = async (userId: string): Promise<Omit<UserProfile, 
             email: data.email,
             savedScenarios: data.savedScenarios || [],
             subscriptionStatus: data.subscriptionStatus,
-            trialEndDate: data.trialEndDate?.toDate(),
+            freeCredits: data.freeCredits || 0, // Get freeCredits
             createdAt: data.createdAt?.toDate(),
         } as Omit<UserProfile, 'callHistory'>;
     } else {
@@ -123,7 +124,7 @@ export const updateUserProfile = async (userId: string, data: Partial<Omit<UserP
             email: data.email || "", // This should ideally come from auth.currentUser.email
             savedScenarios: [],
             subscriptionStatus: "free", // Default to free
-            trialEndDate: null, // Or set a default trial end date if applicable
+            freeCredits: 5, // Default free credits for new users
             createdAt: serverTimestamp(),
             ...data, // Merge any provided data
         });
@@ -133,6 +134,12 @@ export const updateUserProfile = async (userId: string, data: Partial<Omit<UserP
     }
 };
 
+export const decrementUserCredits = async (userId: string): Promise<void> => {
+    const userRef = doc(db, "users", userId);
+    await updateDoc(userRef, {
+        freeCredits: increment(-1)
+    });
+};
 
 export {
   auth,

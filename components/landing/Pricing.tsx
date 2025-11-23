@@ -70,7 +70,7 @@ const Pricing: React.FC<PricingProps> = ({ onStart }) => {
               )}
             </div>
             
-            <p className="text-center text-text-secondary mt-6">Start with a 14-day, no-risk free trial.</p>
+            <p className="text-center text-text-secondary mt-6">Start with free credits, then upgrade to Pro for unlimited simulations.</p>
 
             <ul className="mt-8 space-y-4 text-text-secondary flex-grow">
               {[
@@ -89,7 +89,7 @@ const Pricing: React.FC<PricingProps> = ({ onStart }) => {
             
             <div className="mt-8">
               <button onClick={onStart} className="block w-full text-center font-semibold py-3 px-6 rounded-lg transition duration-300 ease-in-out transform hover:scale-105 bg-primary text-white hover:bg-primary-hover">
-                Start Free Trial & Lock In My Rate
+                Get Started with Free Credits & Lock In My Rate
               </button>
             </div>
           </div>

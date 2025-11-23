@@ -78,6 +78,7 @@ export const deleteSimulation = async (userId: string, simulationId: string): Pr
     await deleteDoc(simulationDocRef);
 };
 
+
 export const deleteMultipleSimulations = async (userId: string, simulationIds: string[]): Promise<void> => {
     if (simulationIds.length === 0) return;
 
@@ -113,7 +114,23 @@ export const getSimulations = async (userId: string): Promise<CallRecord[]> => {
 
 export const updateUserProfile = async (userId: string, data: Partial<Omit<UserProfile, 'id' | 'email' | 'callHistory'>>): Promise<void> => {
     const userRef = doc(db, "users", userId);
-    await setDoc(userRef, data, { merge: true });
+    const docSnap = await getDoc(userRef);
+
+    if (!docSnap.exists()) {
+        // If user profile doesn't exist, set initial values
+        await setDoc(userRef, {
+            name: data.name || "",
+            email: data.email || "", // This should ideally come from auth.currentUser.email
+            savedScenarios: [],
+            subscriptionStatus: "free", // Default to free
+            trialEndDate: null, // Or set a default trial end date if applicable
+            createdAt: serverTimestamp(),
+            ...data, // Merge any provided data
+        });
+    } else {
+        // If user profile exists, update it
+        await updateDoc(userRef, data);
+    }
 };
 
 

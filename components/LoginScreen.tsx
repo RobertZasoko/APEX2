@@ -3,7 +3,11 @@ import { GoogleIcon, UserIcon } from './icons/Icons';
 import { auth, googleProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword } from '../services/firebase';
 import { AuthError, User } from 'firebase/auth';
 
-const LoginScreen: React.FC = () => {
+interface LoginScreenProps {
+  onLoginSuccess: (user: User) => void;
+}
+
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [isLoginView, setIsLoginView] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,15 +19,15 @@ const LoginScreen: React.FC = () => {
     setError(null);
     setIsLoading(true);
     try {
+      let userCredential;
       if (isLoginView) {
-        await signInWithEmailAndPassword(auth, email, password);
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
       }
-      // onAuthStateChanged in App.tsx will handle the success case
+      onLoginSuccess(userCredential.user);
     } catch (err) {
       const authError = err as AuthError;
-      // Firebase provides user-friendly error messages, but we can customize if needed.
       if (authError.code === 'auth/invalid-credential') {
         setError('Invalid email or password. Please try again.');
       } else if (authError.code === 'auth/email-already-in-use') {
@@ -40,8 +44,8 @@ const LoginScreen: React.FC = () => {
     setError(null);
     setIsLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
-      // onAuthStateChanged in App.tsx will handle the success case
+      const result = await signInWithPopup(auth, googleProvider);
+      onLoginSuccess(result.user);
     } catch (err) {
       const authError = err as AuthError;
       setError(authError.message);
@@ -49,7 +53,6 @@ const LoginScreen: React.FC = () => {
       setIsLoading(false);
     }
   };
-
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">

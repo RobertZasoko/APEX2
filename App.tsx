@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { AppState, Scenario, TranscriptMessage, UserProfile, CallRecord, Feedback, SavedScenario } from './types';
 import { generateFeedback } from './services/geminiService';
 import { auth, onAuthStateChanged, signOut, getUserProfile, getSimulations, saveSimulation, updateUserProfile, deleteSimulation, deleteMultipleSimulations } from './services/firebase';
+import { User } from 'firebase/auth';
 
 // Landing Page Components
 import Header from './components/landing/Header';
@@ -39,8 +40,47 @@ const App: React.FC = () => {
     setView('app');
   }, []);
 
+  const handleLoginSuccess = useCallback(async (firebaseUser: User) => {
+    try {
+      // Ensure the user profile exists in Firestore and is fully populated.
+      // updateUserProfile now handles creation if the profile doesn't exist.
+      await updateUserProfile(firebaseUser.uid, {
+        name: firebaseUser.displayName || "",
+        email: firebaseUser.email || "",
+        // Other default fields will be set by updateUserProfile if not present
+      });
+
+      // Re-fetch the complete user profile after ensuring it's created/updated
+      const userProfileData = await getUserProfile(firebaseUser.uid);
+
+      if (!userProfileData) {
+        console.error("User profile not found after login success.");
+        alert("There was a problem setting up your account. Please try logging in again.");
+        await signOut(auth);
+        return;
+      }
+      
+      const simulations = await getSimulations(firebaseUser.uid);
+      const fullUserProfile: UserProfile = {
+          ...userProfileData,
+          callHistory: simulations,
+      };
+      setUser(fullUserProfile);
+      setAppState(AppState.SETUP);
+      setView('app');
+
+    } catch (error) {
+      console.error("Error during login success handling:", error);
+      alert("An error occurred during login. Please try again.");
+      await signOut(auth);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setIsAuthLoading(true);
       try {
         if (firebaseUser) {
           // If user has no display name, they need to go through onboarding.
@@ -48,46 +88,18 @@ const App: React.FC = () => {
           if (!firebaseUser.displayName) {
             setAppState(AppState.ONBOARDING);
             setView('app');
+            setIsAuthLoading(false);
             return;
           }
           
-          let userProfileData = await getUserProfile(firebaseUser.uid);
-
-          // If firestore profile doesn't exist, it's a new user whose profile
-          // is being created by a backend function. We'll poll for it.
-          if (!userProfileData) {
-            const pollForProfile = async (retries = 5, delay = 1000): Promise<Omit<UserProfile, 'callHistory'> | null> => {
-                for (let i = 0; i < retries; i++) {
-                    const profile = await getUserProfile(firebaseUser.uid);
-                    if (profile) return profile;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-                return null;
-            };
-            
-            userProfileData = await pollForProfile();
-
-            if (!userProfileData) {
-              console.error("User profile was not found or created by the backend in time.");
-              alert("There was a problem setting up your account. Please try logging in again.");
-              await signOut(auth);
-              return; // This will trigger the signed-out state path
-            }
-          }
-          
-          const simulations = await getSimulations(firebaseUser.uid);
-          const fullUserProfile: UserProfile = {
-              ...userProfileData,
-              callHistory: simulations,
-          };
-          setUser(fullUserProfile);
-          setAppState(AppState.SETUP);
-          setView('app');
+          // For existing users or Google sign-ups, ensure profile is complete
+          await handleLoginSuccess(firebaseUser);
 
         } else {
           // User is signed out.
           setUser(null);
           setAppState(AppState.LOGIN);
+          setIsAuthLoading(false);
         }
       } catch (error) {
         console.error("Failed to process auth state change:", error);
@@ -95,13 +107,12 @@ const App: React.FC = () => {
         setUser(null);
         setAppState(AppState.LOGIN);
         setView('landing');
-      } finally {
         setIsAuthLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [handleLoginSuccess]);
 
 
   const handleLogout = useCallback(async () => {
@@ -310,7 +321,7 @@ const App: React.FC = () => {
 
   const renderAppContent = () => {
     if (appState === AppState.LOGIN) {
-      return <LoginScreen />;
+      return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
     }
     if (appState === AppState.ONBOARDING) {
       return <OnboardingScreen />;
@@ -347,7 +358,7 @@ const App: React.FC = () => {
       case AppState.PROFILE:
         return <ProfileScreen user={user} onBack={handleBackToSetup} onLogout={handleLogout} onStartCall={handleStartCall} onDeleteCallRecord={handleDeleteCallRecord} onDeleteMultipleCallRecords={handleDeleteMultipleCallRecords} deletingRecordIds={deletingState.recordIds} />;
       default:
-        return <LoginScreen />;
+        return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
     }
   };
 

@@ -55,14 +55,21 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onVerificatio
       }
       onLoginSuccess(userCredential.user);
     } catch (error: any) {
-      console.error("Email/Password Auth Error:", error);
-      if (error.code === 'auth/email-already-in-use') {
-        setError("This email is already registered. Please log in or use a different email.");
-      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
-        setError("Invalid email or password. Please try again.");
-      } else {
-        setError(error.message);
-      }
+        console.error("Email/Password Auth Error:", error);
+        switch (error.code) {
+            case 'auth/user-not-found':
+                setError("No account found with this email. Please sign up.");
+                break;
+            case 'auth/wrong-password':
+                setError("Password incorrect, please try again.");
+                break;
+            case 'auth/email-already-in-use':
+                setError("This email is already registered. Please log in or use a different email.");
+                break;
+            default:
+                setError("An unexpected error occurred. Please try again.");
+                break;
+        }
     } finally {
       setIsLoading(false);
     }

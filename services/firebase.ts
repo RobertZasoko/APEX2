@@ -6,7 +6,8 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  sendEmailVerification
 } from "firebase/auth";
 import {
   getFirestore,
@@ -124,7 +125,7 @@ export const updateUserProfile = async (userId: string, data: Partial<Omit<UserP
             email: data.email || "", // This should ideally come from auth.currentUser.email
             savedScenarios: [],
             subscriptionStatus: "free", // Default to free
-            freeCredits: 5, // Default free credits for new users
+            freeCredits: 10, // Default free credits for new users
             createdAt: serverTimestamp(),
             ...data, // Merge any provided data
         });
@@ -149,4 +150,5 @@ export {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  sendEmailVerification
 };

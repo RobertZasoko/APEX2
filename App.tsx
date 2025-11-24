@@ -16,6 +16,7 @@ import Footer from './components/landing/Footer';
 
 // App Components
 import LoginScreen from './components/LoginScreen';
+import EmailVerificationScreen from './components/EmailVerificationScreen';
 import OnboardingScreen from './components/OnboardingScreen';
 import SubscriptionScreen from './components/SubscriptionScreen';
 import SetupScreen from './components/SetupScreen';
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'app'>('landing');
   const [appState, setAppState] = useState<AppState>(AppState.LOGIN);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [verificationEmail, setVerificationEmail] = useState<string>("");
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [currentAudioDeviceId, setCurrentAudioDeviceId] = useState<string | undefined>(undefined);
@@ -58,10 +60,22 @@ const App: React.FC = () => {
       }
 
       if (!userProfileData) {
-        console.error("User profile not found after login/onboarding success, even after polling.");
-        alert("There was a problem setting up your account. Please try logging in again.");
-        await signOut(auth);
-        return;
+        console.error("User profile not found after login/onboarding success, even after polling. Creating a default profile.");
+        // Create a default profile if it still doesn't exist (e.g., existing Firebase Auth user logging in for the first time).
+        await updateUserProfile(firebaseUser.uid, {
+            name: firebaseUser.displayName || "",
+            email: firebaseUser.email || "",
+            // Default values for savedScenarios, subscriptionStatus, freeCredits, createdAt are handled by updateUserProfile
+        });
+        // Re-fetch the newly created profile
+        userProfileData = await getUserProfile(firebaseUser.uid);
+
+        if (!userProfileData) {
+            console.error("Failed to create and retrieve default user profile.");
+            alert("There was a critical problem setting up your account. Please try logging in again.");
+            await signOut(auth);
+            return;
+        }
       }
       
       const simulations = await getSimulations(firebaseUser.uid);
@@ -89,6 +103,12 @@ const App: React.FC = () => {
       setIsAuthLoading(true); 
       try {
         if (firebaseUser) {
+          if (!firebaseUser.emailVerified) {
+            setVerificationEmail(firebaseUser.email!);
+            setAppState(AppState.EMAIL_VERIFICATION);
+            setView('app');
+            return;
+          }
           const userProfileData = await getUserProfile(firebaseUser.uid);
 
           if (!userProfileData || !firebaseUser.displayName) {
@@ -202,12 +222,15 @@ const App: React.FC = () => {
     setCurrentCallRecordingUrl(audioUrl);
 
     try {
-      const feedback = await generateFeedback(currentScenario, transcript);
+      // Clean the transcript to ensure it's serializable
+      const cleanedTranscript = transcript.map(({ speaker, text }) => ({ speaker, text }));
+
+      const feedback = await generateFeedback(currentScenario, cleanedTranscript);
       setCurrentFeedback(feedback);
 
       const newRecordForDb = {
         scenario: currentScenario,
-        transcript,
+        transcript: cleanedTranscript, // Use the cleaned transcript
         feedback,
         callRecordingUrl: audioUrl,
       };
@@ -230,8 +253,8 @@ const App: React.FC = () => {
       setAppState(AppState.FEEDBACK);
     } catch (error)
  {
-      console.error("Failed to generate feedback:", error);
-      alert("There was an error generating your feedback. Please try another call.");
+      console.error("Failed to generate feedback or save simulation:", error);
+      alert("There was an error processing your call. Please try again.");
       setAppState(AppState.SETUP);
     }
   }, [currentScenario, user]);
@@ -297,55 +320,56 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  if (isAuthLoading) {
-    return (
-        <div className="flex h-screen w-screen items-center justify-center bg-background">
-            <LoadingIcon className="w-12 h-12 text-primary" />
-        </div>
-    );
-  }
+  const handleGoToLogin = () => {
+    setAppState(AppState.LOGIN);
+  };
 
-  if (view === 'landing' && !user) {
-    return (
-      <div className="bg-background text-text-primary font-body">
-        <Header onStart={handleStartApp} />
-        <main>
-          <Hero onStart={handleStartApp} />
-          <Problem />
-          <Solution />
-          <Features />
-          <Pricing onStart={handleStartApp} />
-          <Cta onStart={handleStartApp} />
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  const renderAppContent = () => {
-    if (appState === AppState.LOGIN) {
-      return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
-    }
-    if (appState === AppState.ONBOARDING) {
-      return <OnboardingScreen onOnboardingComplete={handleOnboardingComplete} />;
-    }
-    
-    // All states below require a user object.
-    if (!user) {
+  // Main Render Logic
+  const renderContent = () => {
+    if (isAuthLoading) {
       return (
-        <div className="flex h-screen w-screen items-center justify-center bg-background">
-            <LoadingIcon className="w-12 h-12 text-primary" />
+          <div className="flex h-screen w-screen items-center justify-center bg-background">
+              <LoadingIcon className="w-12 h-12 text-primary" />
+          </div>
+      );
+    }
+
+    if (view === 'landing' && !user) {
+      return (
+        <div className="bg-background text-text-primary font-body">
+          <Header onStart={handleStartApp} />
+          <main>
+            <Hero onStart={handleStartApp} />
+            <Problem />
+            <Solution />
+            <Features />
+            <Pricing onStart={handleStartApp} />
+            <Cta onStart={handleStartApp} />
+          </main>
+          <Footer />
         </div>
       );
     }
 
+    // If we are in the 'app' view or a user is logged in, render the app content
     switch (appState) {
+      case AppState.LOGIN:
+        return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
+      case AppState.EMAIL_VERIFICATION:
+        return <EmailVerificationScreen email={verificationEmail} onGoToLogin={handleGoToLogin} />;
+      case AppState.ONBOARDING:
+        return <OnboardingScreen onOnboardingComplete={handleOnboardingComplete} />;
+      
+      // All states below require a user object.
       case AppState.SUBSCRIPTION:
+        if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
         return <SubscriptionScreen user={user} onSubscriptionSuccess={handleSubscriptionSuccess} />;
       case AppState.SETUP:
+        if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
         return <SetupScreen user={user} onStartCall={handleStartCall} onViewHistory={handleViewHistory} onLogout={handleLogout} onSaveScenario={handleSaveScenario} onDeleteScenario={handleDeleteScenario} deletingScenarioId={deletingState.scenarioId} />;
       case AppState.IN_CALL:
-        return <CallScreen scenario={currentScenario!} onEndCall={handleEndCall} onBack={handleBackToSetup} audioDeviceId={currentAudioDeviceId} />;
+        if (!user || !currentScenario) return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
+        return <CallScreen scenario={currentScenario} onEndCall={handleEndCall} onBack={handleBackToSetup} audioDeviceId={currentAudioDeviceId} />;
       case AppState.GENERATING_FEEDBACK:
         return (
             <div className="flex flex-col h-screen w-screen items-center justify-center bg-background text-center">
@@ -355,17 +379,19 @@ const App: React.FC = () => {
             </div>
         );
       case AppState.FEEDBACK:
-        return <FeedbackScreen feedback={currentFeedback!} onNewCall={handleNewCall} onViewHistory={handleViewHistory} callRecordingUrl={currentCallRecordingUrl} />;
+        if (!user || !currentFeedback) return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
+        return <FeedbackScreen feedback={currentFeedback} onNewCall={handleNewCall} onViewHistory={handleViewHistory} callRecordingUrl={currentCallRecordingUrl} />;
       case AppState.PROFILE:
-        return <ProfileScreen user={user} onBack={handleBackToSetup} onLogout={handleLogout} onStartCall={handleStartCall} onDeleteCallRecord={handleDeleteCallRecord} onDeleteMultipleCallRecords={handleDeleteMultipleCallRecords} deletingRecordIds={deletingState.recordIds} />;
+        if (!user) return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
+        return <ProfileScreen user={user} onBack={handleBackToSetup} onLogout={handleLogout} onStartCall={handleStartCall} onDeleteCallRecord={handleDeleteCallRecord} onDeleteMultipleCallRecords={handleDeleteMultipleCallRecords} deletingRecordIds={deletingState.recordIds} onUpdateUserProfile={updateUserProfile} />;
       default:
-        return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+        return <LoginScreen onLoginSuccess={handleLoginSuccess} onVerificationEmailSent={setVerificationEmail} setAppState={setAppState} />;
     }
   };
 
   return (
     <div className="App">
-      {renderAppContent()}
+      {renderContent()}
     </div>
   );
 };

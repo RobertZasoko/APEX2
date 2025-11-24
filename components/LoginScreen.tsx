@@ -1,111 +1,190 @@
 import React, { useState } from 'react';
-import { GoogleIcon, UserIcon } from './icons/Icons';
-import { auth, googleProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword } from '../services/firebase';
-import { AuthError, User } from 'firebase/auth';
+import { auth, googleProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification } from '../services/firebase';
+import { User, getAuth, sendPasswordResetEmail } from 'firebase/auth';
+import { AppState } from '../types';
+import { GoogleIcon, LoadingIcon } from './icons/Icons';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: User) => void;
+  onVerificationEmailSent: (email: string) => void;
+  setAppState: (state: AppState) => void;
 }
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onVerificationEmailSent, setAppState }) => {
   const [isLoginView, setIsLoginView] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-    try {
-      let userCredential;
-      if (isLoginView) {
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      }
-      onLoginSuccess(userCredential.user);
-    } catch (err) {
-      const authError = err as AuthError;
-      if (authError.code === 'auth/invalid-credential') {
-        setError('Invalid email or password. Please try again.');
-      } else if (authError.code === 'auth/email-already-in-use') {
-        setError('This email address is already in use. Please sign in or use a different email.');
-      } else {
-        setError(authError.message);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [isPasswordReset, setIsPasswordReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
 
   const handleGoogleSignIn = async () => {
-    setError(null);
     setIsLoading(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       onLoginSuccess(result.user);
-    } catch (err) {
-      const authError = err as AuthError;
-      setError(authError.message);
+    } catch (error: any) {
+      console.error("Google Sign-In Error:", error);
+      setError(error.message);
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    try {
+      let userCredential;
+      if (isLoginView) {
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        if (!userCredential.user.emailVerified) {
+            await sendEmailVerification(userCredential.user);
+            onVerificationEmailSent(userCredential.user.email!);
+            setAppState(AppState.EMAIL_VERIFICATION);
+            return;
+        }
+      } else {
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await sendEmailVerification(userCredential.user);
+        onVerificationEmailSent(userCredential.user.email!);
+        setAppState(AppState.EMAIL_VERIFICATION);
+        return; // Don't call onLoginSuccess yet
+      }
+      onLoginSuccess(userCredential.user);
+    } catch (error: any) {
+      console.error("Email/Password Auth Error:", error);
+      if (error.code === 'auth/email-already-in-use') {
+        setError("This email is already registered. Please log in or use a different email.");
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        setError("Invalid email or password. Please try again.");
+      } else {
+        setError(error.message);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="max-w-md w-full bg-panel p-8 rounded-lg shadow-sm border border-border">
-        <div className="text-center">
-            <UserIcon className="mx-auto h-12 w-12 text-text-secondary" />
-            <h1 className="text-3xl font-semibold text-text-primary mt-4 font-heading">{isLoginView ? 'Welcome Back' : 'Create an Account'}</h1>
-            <p className="text-text-secondary mt-2">Enter your credentials to access your training dashboard.</p>
-        </div>
-        <form onSubmit={handleEmailPasswordSubmit} className="mt-8 space-y-6">
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="email-address" className="sr-only">Email address</label>
-              <input id="email-address" name="email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} className="appearance-none rounded-none relative block w-full px-3 py-2 border border-border bg-panel text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary focus:z-10 sm:text-sm rounded-t-md" placeholder="Email address" />
-            </div>
-            <div>
-              <label htmlFor="password-for-password" className="sr-only">Password</label>
-              <input id="password" name="password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} className="appearance-none rounded-none relative block w-full px-3 py-2 border border-border bg-panel text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary focus:z-10 sm:text-sm rounded-b-md" placeholder="Password" />
-            </div>
-          </div>
-          
-          {error && <p className="text-sm text-red-600 text-center pt-2">{error}</p>}
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setResetMessage('');
+    const authInstance = getAuth();
+    try {
+      await sendPasswordResetEmail(authInstance, resetEmail);
+      setResetMessage(`Password reset email sent to ${resetEmail}. Check your inbox.`);
+      setIsPasswordReset(false);
+      setResetEmail('');
+    } catch (error: any) {
+      console.error("Password Reset Error:", error);
+      setError("Failed to send password reset email. Please ensure the email is correct and try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-          <div>
-            <button type="submit" disabled={isLoading} className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-primary transition duration-300 disabled:bg-primary/50">
-              {isLoading ? 'Processing...' : isLoginView ? 'Sign In' : 'Sign Up'}
-            </button>
-          </div>
-        </form>
-        
-        <div className="mt-6">
-            <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border"></div>
+  if (isPasswordReset) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-text-primary">
+        <div className="w-full max-w-md p-8 space-y-6 bg-panel rounded-lg shadow-lg border border-border">
+          <h2 className="text-2xl font-bold text-center text-text-primary font-heading">Reset Password</h2>
+          <form onSubmit={handlePasswordReset} className="space-y-4">
+            <input
+              type="email"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              placeholder="Enter your email"
+              required
+              className="w-full px-3 py-2 text-text-primary bg-background border border-border rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+            />
+            {isLoading ? (
+                <div className="flex justify-center items-center w-full h-10">
+                  <LoadingIcon className="w-8 h-8" />
                 </div>
-                <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-panel text-text-secondary">Or continue with</span>
-                </div>
-            </div>
-
-            <div className="mt-6">
-                <button onClick={handleGoogleSignIn} disabled={isLoading} className="w-full inline-flex justify-center items-center py-2 px-4 border border-border rounded-md shadow-sm bg-panel text-sm font-medium text-text-primary hover:bg-background transition-colors disabled:opacity-50">
-                    <GoogleIcon className="w-5 h-5" />
-                    <span className="ml-2">Sign in with Google</span>
+            ) : (
+                <button type="submit" className="w-full px-4 py-2 font-bold text-white bg-primary rounded-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-hover">
+                  Send Reset Email
                 </button>
-            </div>
+            )}
+          </form>
+          {resetMessage && <p className="text-center text-green-500">{resetMessage}</p>}
+          {error && <p className="text-center text-red-500">{error}</p>}
+          <p className="text-center">
+            <button onClick={() => setIsPasswordReset(false)} className="text-sm text-primary hover:underline">Back to Login</button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-text-primary">
+      <div className="w-full max-w-md p-8 space-y-6 bg-panel rounded-lg shadow-lg border border-border">
+        <h2 className="text-3xl font-bold text-center text-text-primary font-heading">{isLoginView ? 'Log In' : 'Sign Up'}</h2>
+        <p className="text-center text-text-secondary">The #1 AI Role-Play Platform</p>
+
+        {error && <p className="text-center text-red-500 bg-red-100 p-3 rounded-md border border-red-300">{error}</p>}
+        
+        <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            required
+            className="w-full px-3 py-2 text-text-primary bg-background border border-border rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            required
+            className="w-full px-3 py-2 text-text-primary bg-background border border-border rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+          />
+          {isLoading ? (
+              <div className="flex justify-center items-center w-full h-10">
+                <LoadingIcon className="w-8 h-8" />
+              </div>
+          ) : (
+            <button type="submit" className="w-full px-4 py-2 font-bold text-white bg-primary rounded-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-hover">
+              {isLoginView ? 'Log In' : 'Sign Up'}
+            </button>
+          )}
+        </form>
+
+        <div className="relative my-4">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-panel text-text-secondary">Or continue with</span>
+          </div>
         </div>
 
-        <p className="mt-6 text-center text-sm text-text-secondary">
-            {isLoginView ? "Don't have an account? " : "Already have an account? "}
-            <button onClick={() => { setIsLoginView(!isLoginView); setError(null); }} className="font-medium text-primary hover:text-primary-hover">
-                {isLoginView ? 'Sign Up' : 'Sign In'}
-            </button>
+        <button onClick={handleGoogleSignIn} disabled={isLoading} className="w-full flex items-center justify-center px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-text-primary bg-background hover:bg-panel-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-hover disabled:opacity-50">
+          <GoogleIcon className="w-5 h-5 mr-2" />
+          Google
+        </button>
+
+        <p className="text-center">
+          {isLoginView ? (
+            <>
+              Don't have an account?{' '}
+              <button onClick={() => { setIsLoginView(false); setError(null); }} className="font-medium text-primary hover:underline">Sign up</button>
+              {' | '}
+              <button onClick={() => { setIsPasswordReset(true); setError(null); }} className="text-sm text-primary hover:underline">Forgot Password?</button>
+            </>
+          ) : (
+            <>
+              Already have an account?{' '}
+              <button onClick={() => { setIsLoginView(true); setError(null); }} className="font-medium text-primary hover:underline">Log in</button>
+            </>
+          )}
         </p>
       </div>
     </div>

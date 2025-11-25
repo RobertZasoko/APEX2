@@ -8,6 +8,7 @@ export enum AppState {
   GENERATING_FEEDBACK,
   FEEDBACK,
   PROFILE,
+  EMAIL_VERIFICATION,
 }
 
 export interface Scenario {

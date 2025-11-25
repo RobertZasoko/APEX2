@@ -2,19 +2,17 @@ import { GoogleGenAI, Type, GenerateContentResponse, Modality } from "@google/ge
 import { Scenario, TranscriptMessage, Feedback } from '../types';
 
 // Lazily initialize to avoid issues during the initial render.
-// The API key is assumed to be set in the deployment environment.
 let ai: GoogleGenAI | null = null;
 export function getGenAI(): GoogleGenAI {
     if (!ai) {
-        const apiKey = process.env.API_KEY;
-        
+        const apiKey = import.meta.env.VITE_API_KEY;
+
         if (!apiKey) {
             // This is a critical configuration error.
-            // This message will appear in your Vercel Function logs.
-            console.error("FATAL ERROR: Gemini API key is missing. Ensure the 'API_KEY' environment variable is correctly set in your Vercel project settings and that the project has been redeployed.");
+            console.error("FATAL ERROR: Gemini API key is missing. Ensure the 'VITE_API_KEY' environment variable is set in your .env.local file.");
             throw new Error("API key is not configured. The simulation cannot start. Please check server logs for details.");
         }
-        
+
         // The API key is passed directly from the environment variable.
         ai = new GoogleGenAI({ apiKey });
     }
@@ -25,9 +23,9 @@ export function getGenAI(): GoogleGenAI {
 const detailedItemSchema = {
     type: Type.OBJECT,
     properties: {
-        point: { 
-            type: Type.STRING, 
-            description: "The main point, summary, or suggestion." 
+        point: {
+            type: Type.STRING,
+            description: "The main point, summary, or suggestion."
         },
         details: {
             type: Type.ARRAY,
@@ -109,7 +107,7 @@ export const generateFeedback = async (scenario: Scenario, transcript: Transcrip
                 responseSchema: feedbackSchema,
             },
         });
-        
+
         const jsonText = response.text.trim();
         const parsedJson = JSON.parse(jsonText);
         return parsedJson as Feedback;

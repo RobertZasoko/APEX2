@@ -65,6 +65,23 @@ export const getUserProfile = async (userId: string): Promise<Omit<UserProfile, 
     }
 };
 
+export const verifyUserEligibility = async (userId: string): Promise<boolean> => {
+    const userProfile = await getUserProfile(userId);
+    if (!userProfile) {
+        throw new Error("User profile not found.");
+    }
+
+    if (userProfile.subscriptionStatus === 'pro' || userProfile.subscriptionStatus === 'founder') {
+        return true;
+    }
+
+    if ((userProfile.freeCredits || 0) > 0) {
+        return true;
+    }
+
+    throw new Error("Insufficient credits");
+};
+
 export const saveSimulation = async (userId: string, simulationData: { scenario: any; transcript: any; feedback: any; callRecordingUrl: string | null; }): Promise<string> => {
     const simulationsColRef = collection(db, "users", userId, "simulations");
     const docRef = await addDoc(simulationsColRef, {
@@ -72,6 +89,16 @@ export const saveSimulation = async (userId: string, simulationData: { scenario:
         transcript: JSON.stringify(simulationData.transcript),
         createdAt: serverTimestamp(),
     });
+
+    // Check subscription status and decrement credits if necessary
+    const userProfile = await getUserProfile(userId);
+    if (userProfile && userProfile.subscriptionStatus === 'free') {
+        const userRef = doc(db, "users", userId);
+        await updateDoc(userRef, {
+            freeCredits: increment(-3.3)
+        });
+    }
+
     return docRef.id;
 };
 
